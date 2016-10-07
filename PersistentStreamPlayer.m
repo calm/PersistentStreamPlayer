@@ -332,9 +332,6 @@
         return;
     }
     if (self.player.status == AVPlayerStatusFailed) {
-        [LogError withError:self.player.error
-                       data:@{@"name" : @"Meditation Session Remote Audio Player Failed",
-                              @"status" : @(self.player.status)}];
         [self.delegate persistentStreamPlayerDidFailToLoadAsset:self];
         return;
     }
