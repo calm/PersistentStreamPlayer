@@ -1,6 +1,16 @@
 ## PersistentStreamPlayer
 
-Example usage:
+Handles the playing of an audio file while streaming, **and** saves the data to a local URL as soon as the stream completes.
+
+### Installation
+
+Add this to your [Podfile](https://cocoapods.org/)
+
+```
+pod 'PersistentStreamPlayer'
+```
+
+### Usage
 
 ```
 PersistentStreamPlayer *remoteAudioPlayer = [[PersistentStreamPlayer alloc] initWithRemoteURL:myHTTPURL
@@ -9,7 +19,7 @@ remoteAudioPlayer.delegate = self;
 [remoteAudioPlayer play];
 ```
 
-Features:
+### Features
 
 * streaming of audio file, starting playback as soon as first data is available
 * **also** saves streamed data to a file URL as soon as the buffer completes
