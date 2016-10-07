@@ -9,5 +9,5 @@ Pod::Spec.new do |s|
   s.source           = { :git => 'https://github.com/calmcom/PersistentStreamPlayer.git', :tag => s.version.to_s }
   s.ios.deployment_target = '8.0'
   s.source_files = '*.{h,m}'
-  s.frameworks = 'AVFoundation'
+  s.frameworks = 'AVFoundation', 'MobileCoreServices'
 end
