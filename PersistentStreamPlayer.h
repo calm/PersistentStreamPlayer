@@ -1,6 +1,5 @@
 #import <Foundation/Foundation.h>
 #import <AVFoundation/AVFoundation.h>
-#import "ManifestEntry.h"
 
 @class PersistentStreamPlayer;
 @protocol PersistentStreamPlayerDelegate <NSObject>
