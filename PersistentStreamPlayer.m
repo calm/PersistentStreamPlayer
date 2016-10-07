@@ -4,6 +4,7 @@
 
 #import "PersistentStreamPlayer.h"
 #import "FileUtils.h"
+#import <MobileCoreServices/MobileCoreServices.h>
 
 @interface PersistentStreamPlayer () <NSURLConnectionDataDelegate, AVAssetResourceLoaderDelegate>
 
