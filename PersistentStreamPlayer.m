@@ -11,7 +11,6 @@
 @property (nonatomic, strong) NSURL *remoteURL;
 @property (nonatomic, strong) NSURL *localURL;
 @property (nonatomic, strong) NSURL *tempURL;
-@property (nonatomic, assign) BOOL didFinishBuffering;
 
 @property (nonatomic, assign) NSUInteger fullAudioDataLength;
 
@@ -27,6 +26,8 @@
 @property (nonatomic, assign) BOOL isObserving;
 @property (nonatomic, assign) BOOL hasForcedDurationLoad;
 @property (nonatomic, assign) BOOL isStalled;
+
+@property (nonatomic, assign) BOOL connectionHasFinishedLoading;
 
 @end
 
@@ -150,19 +151,25 @@
     return [[NSFileManager defaultManager] fileExistsAtPath:self.tempURL.path];
 }
 
-- (NSData *)dataFromTempFileInRange:(NSRange)range
+- (NSData *)dataFromFileInRange:(NSRange)range
 {
-    NSFileHandle *fileHandle = [NSFileHandle fileHandleForReadingAtPath:self.tempURL.path];;
+    NSFileHandle *fileHandle = [NSFileHandle fileHandleForReadingAtPath:self.currentURLForDataFile.path];;
     [fileHandle seekToFileOffset:range.location];
     return [fileHandle readDataOfLength:range.length];
 }
 
+- (NSURL *)currentURLForDataFile
+{
+    return self.connectionHasFinishedLoading ? self.localURL : self.tempURL;
+}
+
 - (void)connectionDidFinishLoading:(NSURLConnection *)connection
 {
+    self.connectionHasFinishedLoading = YES;
+
     [self processPendingRequests];
     [FileUtils moveFileFromURL:self.tempURL toURL:self.localURL];
 
-    self.didFinishBuffering = YES;
     [self.delegate persistentStreamPlayerDidPersistAsset:self];
 }
 
@@ -217,7 +224,7 @@
     NSUInteger numberOfBytesToRespondWith = MIN((NSUInteger)dataRequest.requestedLength, unreadBytes);
 
     NSRange range = NSMakeRange((NSUInteger)startOffset, numberOfBytesToRespondWith);
-    NSData *subData = [self dataFromTempFileInRange:range];
+    NSData *subData = [self dataFromFileInRange:range];
     [dataRequest respondWithData:subData];
 
     long long endOffset = startOffset + dataRequest.requestedLength;
@@ -225,21 +232,28 @@
     return didRespondFully;
 }
 
-- (BOOL)resourceLoader:(AVAssetResourceLoader *)resourceLoader shouldWaitForLoadingOfRequestedResource:(AVAssetResourceLoadingRequest *)loadingRequest
+- (BOOL)                 resourceLoader:(AVAssetResourceLoader *)resourceLoader
+shouldWaitForLoadingOfRequestedResource:(AVAssetResourceLoadingRequest *)loadingRequest
 {
+    [self.pendingRequests addObject:loadingRequest];
+
+    if (self.connectionHasFinishedLoading) {
+        [self processPendingRequests];
+        return YES;
+    }
+
     if (!self.connection) {
-        NSURL *interceptedURL = [loadingRequest.request URL];
+        self.connectionHasFinishedLoading = NO;
+
+        NSURL *interceptedURL = loadingRequest.request.URL;
         NSURLComponents *actualURLComponents = [[NSURLComponents alloc] initWithURL:interceptedURL resolvingAgainstBaseURL:NO];
         actualURLComponents.scheme = self.originalURLScheme ?: @"http";
 
-        NSURLRequest *request = [NSURLRequest requestWithURL:[actualURLComponents URL]];
+        NSURLRequest *request = [NSURLRequest requestWithURL:actualURLComponents.URL];
         self.connection = [[NSURLConnection alloc] initWithRequest:request delegate:self startImmediately:NO];
         [self.connection setDelegateQueue:[NSOperationQueue mainQueue]];
-
         [self.connection start];
     }
-
-    [self.pendingRequests addObject:loadingRequest];
 
     return YES;
 }
@@ -358,9 +372,6 @@
 
 - (NSTimeInterval)timeBuffered
 {
-    if (self.didFinishBuffering) {
-        return 1;
-    }
     CMTimeRange timeRange = [[self.player.currentItem.loadedTimeRanges lastObject] CMTimeRangeValue];
     return CMTimeGetSeconds(timeRange.start) + CMTimeGetSeconds(timeRange.duration);
 }
