@@ -4,7 +4,7 @@
 @class PersistentStreamPlayer;
 @protocol PersistentStreamPlayerDelegate <NSObject>
 
-@required
+@optional
 - (void)persistentStreamPlayerDidPersistAsset:(PersistentStreamPlayer *)player;
 
 - (void)persistentStreamPlayerDidFinishPlaying:(PersistentStreamPlayer *)player;
@@ -22,6 +22,9 @@
 
 @property (nonatomic, weak) id<PersistentStreamPlayerDelegate> delegate;
 @property (nonatomic, readonly) AVPlayer *player;
+@property (nonatomic, assign) BOOL looping;
+@property (nonatomic, readonly) BOOL playing;
+@property (nonatomic, assign) float volume;
 
 - (void)play;
 - (void)pause;
@@ -31,5 +34,8 @@
 @property (nonatomic, readonly) NSTimeInterval duration;
 @property (nonatomic, readonly) NSTimeInterval timeBuffered;
 @property (nonatomic, readonly) NSTimeInterval currentTime;
+
+/* due to buffering model, doesn't yet support shifting forward */
+- (void)shiftAudioBack:(NSTimeInterval)duration;
 
 @end

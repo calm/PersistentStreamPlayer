@@ -23,12 +23,13 @@ remoteAudioPlayer.delegate = self;
 
 * streaming of audio file, starting playback as soon as first data is available
 * **also** saves streamed data to a file URL as soon as the buffer completes
+* simple `play`, `pause` and `destroy` methods (`destroy` clears all memory resources)
+* ability to seamlessly loop the audio file. call `player.looping = YES`
 * exposes `timeBuffered`, helpful for displaying buffer progress bars in the UI
 * handles re-starting the audio file after the buffer stream stalls (e.g. slow network)
-* simple `play`, `pause` and `destroy` methods (`destroy` clears all memory resources)
 * does not keep audio file data in memory, so that it supports large files that don't fit in RAM
 
-The `PersistentStreamPlayerDelegate` protocol has some helpful event indicators
+The `PersistentStreamPlayerDelegate` protocol has some helpful event indicators, all optional:
 
 ```
 /* called when the data is saved to localURL */
