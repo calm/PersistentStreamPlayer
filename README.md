@@ -1,6 +1,6 @@
 ## PersistentStreamPlayer
 
-Handles the playing of an audio file while streaming, **and** saves the data to a local URL as soon as the stream completes.
+Handles the playing of an audio file while streaming, **and** saves the data to a local URL as soon as the stream completes.  Battle-tested in the production version of [Calm](https://www.calm.com/ios)
 
 ### Installation
 
