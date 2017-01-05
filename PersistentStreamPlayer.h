@@ -20,7 +20,6 @@
 - (nullable instancetype)initWithRemoteURL:(nonnull NSURL *)remoteURL
                                   localURL:(nonnull NSURL *)localURL;
 
-@property (nonatomic, readonly) AVPlayer *player;
 @property (nonatomic, weak, nullable) id<PersistentStreamPlayerDelegate> delegate;
 @property (nonatomic, assign) BOOL looping;
 @property (nonatomic, readonly) BOOL playing;
@@ -35,7 +34,10 @@
 @property (nonatomic, readonly) NSTimeInterval timeBuffered;
 @property (nonatomic, readonly) NSTimeInterval currentTime;
 
-/* due to buffering model, doesn't yet support shifting forward */
-- (void)shiftAudioBack:(NSTimeInterval)duration;
+/* WARNING: seeking may create inconsistent behavior. This feature is thus "in beta"
+ * Seeking while making the file persist on disk in the proper byte order is non-trivial
+ * If you want to help make this robust, a pull request would be eagerly welcomed
+ */
+- (void)seekToTime:(NSTimeInterval)time;
 
 @end

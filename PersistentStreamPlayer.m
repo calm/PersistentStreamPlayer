@@ -143,6 +143,14 @@
     return self.player.rate != 0 && !self.player.error;
 }
 
+/* See "in beta" warning in header file. */
+#pragma mark - seeking
+- (void)seekToTime:(NSTimeInterval)time
+{
+    CMTime seekTime = CMTimeMakeWithSeconds(MAX(time, 0), self.player.currentTime.timescale);
+    [self.player seekToTime:seekTime];
+}
+
 #pragma mark - NSURLConnection delegate
 - (void)connection:(NSURLConnection *)connection didReceiveResponse:(NSURLResponse *)response
 {
@@ -450,17 +458,6 @@ shouldWaitForLoadingOfRequestedResource:(AVAssetResourceLoadingRequest *)loading
         return self.loopingLocalAudioPlayer.currentTime;
     }
     return CMTimeGetSeconds(self.player.currentTime);
-}
-
-- (void)shiftAudioBack:(NSTimeInterval)duration
-{
-    if (duration < 0) {
-        return;
-    }
-
-    CMTime currentTime = self.player.currentTime;
-    Float64 seconds = MAX(0, CMTimeGetSeconds(currentTime) - duration);
-    [self.player seekToTime:CMTimeMakeWithSeconds(seconds, currentTime.timescale)];
 }
 
 @end
