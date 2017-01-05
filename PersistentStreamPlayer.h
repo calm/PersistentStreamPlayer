@@ -5,23 +5,23 @@
 @protocol PersistentStreamPlayerDelegate <NSObject>
 
 @optional
-- (void)persistentStreamPlayerDidPersistAsset:(PersistentStreamPlayer *)player;
+- (void)persistentStreamPlayerDidPersistAsset:(nonnull PersistentStreamPlayer *)player;
 
-- (void)persistentStreamPlayerDidFinishPlaying:(PersistentStreamPlayer *)player;
-- (void)persistentStreamPlayerStreamingDidStall:(PersistentStreamPlayer *)player;
+- (void)persistentStreamPlayerDidFinishPlaying:(nonnull PersistentStreamPlayer *)player;
+- (void)persistentStreamPlayerStreamingDidStall:(nonnull PersistentStreamPlayer *)player;
 
-- (void)persistentStreamPlayerDidLoadAsset:(PersistentStreamPlayer *)player;
-- (void)persistentStreamPlayerDidFailToLoadAsset:(PersistentStreamPlayer *)player;
+- (void)persistentStreamPlayerDidLoadAsset:(nonnull PersistentStreamPlayer *)player;
+- (void)persistentStreamPlayerDidFailToLoadAsset:(nonnull PersistentStreamPlayer *)player;
 
 @end
 
 @interface PersistentStreamPlayer : NSObject
 
-- (instancetype)initWithRemoteURL:(NSURL *)remoteURL
-                         localURL:(NSURL *)localURL;
+- (nullable instancetype)initWithRemoteURL:(nonnull NSURL *)remoteURL
+                                  localURL:(nonnull NSURL *)localURL;
 
-@property (nonatomic, weak) id<PersistentStreamPlayerDelegate> delegate;
 @property (nonatomic, readonly) AVPlayer *player;
+@property (nonatomic, weak, nullable) id<PersistentStreamPlayerDelegate> delegate;
 @property (nonatomic, assign) BOOL looping;
 @property (nonatomic, readonly) BOOL playing;
 @property (nonatomic, assign) float volume;
