@@ -40,10 +40,15 @@
 - (instancetype)initWithRemoteURL:(NSURL *)remoteURL
                          localURL:(NSURL *)localURL
 {
+    if (!remoteURL || !localURL) {
+        return nil;
+    }
+
     self = [super init];
     if (self) {
         self.remoteURL = remoteURL;
         self.localURL = localURL;
+
         self.tempURL = [FileUtils randomTempFileURL];
 
         [self prepareToPlay];
@@ -122,6 +127,10 @@
 
 - (NSURL *)audioRemoteStreamingURL
 {
+    if (!self.remoteURL) {
+        return nil;
+    }
+
     NSURLComponents *components = [[NSURLComponents alloc] initWithURL:self.remoteURL resolvingAgainstBaseURL:NO];
     self.originalURLScheme = components.scheme;
     components.scheme = @"streaming";
