@@ -229,12 +229,15 @@
     }
 }
 
+- (BOOL)muted
+{
+	return self.player.muted;
+}
 
 - (void)setMuted:(BOOL)muted
 {
 	self.player.muted = muted;
 }
-
 
 #pragma mark - AVURLAsset resource loading
 - (void)processPendingRequests
