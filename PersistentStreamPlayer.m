@@ -232,11 +232,7 @@
 
 - (void)setMuted:(BOOL)muted
 {
-    if (self.loopingLocalAudioPlayer) {
-        self.loopingLocalAudioPlayer.muted = muted;
-    } else if (self.player) {
-        self.player.muted = muted;
-    }
+	self.player.muted = muted;
 }
 
 
