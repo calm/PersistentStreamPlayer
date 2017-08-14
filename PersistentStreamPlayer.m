@@ -13,6 +13,7 @@
 @property (nonatomic, strong) NSURL *tempURL;
 
 @property (nonatomic, assign) NSUInteger fullAudioDataLength;
+@property (nonatomic, assign) NSUInteger loadedAudioDataLength;
 
 @property (nonatomic, strong) AVPlayer *player;
 @property (nonatomic, strong) NSURLConnection *connection;
@@ -74,6 +75,9 @@
                               forKeyPath:@"status"
                                  options:NSKeyValueObservingOptionNew
                                  context:NULL];
+    
+    //uncomment if it will help
+//    self.player.automaticallyWaitsToMinimizeStalling = NO;
 }
 
 - (void)addObservers
@@ -163,14 +167,15 @@
 #pragma mark - NSURLConnection delegate
 - (void)connection:(NSURLConnection *)connection didReceiveResponse:(NSURLResponse *)response
 {
-    self.fullAudioDataLength = 0;
+    self.loadedAudioDataLength = 0;
     self.response = (NSHTTPURLResponse *)response;
+    self.fullAudioDataLength = self.response.expectedContentLength;
     [self processPendingRequests];
 }
 
 - (void)connection:(NSURLConnection *)connection didReceiveData:(NSData *)data
 {
-    self.fullAudioDataLength += data.length;
+    self.loadedAudioDataLength += data.length;
     [self appendDataToTempFile:data];
     [self processPendingRequests];
 }
@@ -343,6 +348,10 @@ shouldWaitForLoadingOfRequestedResource:(AVAssetResourceLoadingRequest *)loading
 #pragma mark - health check timer
 - (void)startHealthCheckTimer
 {
+    if (self.healthCheckTimer) {
+        [self stopHealthCheckTimer];
+    }
+    
     [self healthCheckTimerDidFire]; // fires once immediately
     self.healthCheckTimer = [NSTimer scheduledTimerWithTimeInterval:0.5
                                                              target:self
@@ -370,6 +379,13 @@ shouldWaitForLoadingOfRequestedResource:(AVAssetResourceLoadingRequest *)loading
 - (void)tryToPlayIfStalled
 {
     if (!self.isStalled) {
+        
+        if (self.player.rate != 0
+            && self.player.timeControlStatus == AVPlayerTimeControlStatusWaitingToPlayAtSpecifiedRate
+            && [self.player.reasonForWaitingToPlay isEqualToString:AVPlayerWaitingToMinimizeStallsReason]) {
+            [self.player playImmediatelyAtRate:self.player.rate];
+        }
+        
         return;
     }
 
@@ -386,6 +402,7 @@ shouldWaitForLoadingOfRequestedResource:(AVAssetResourceLoadingRequest *)loading
     if ([self.delegate respondsToSelector:@selector(persistentStreamPlayerDidFinishPlaying:)]) {
         [self.delegate persistentStreamPlayerDidFinishPlaying:self];
     }
+    [self stopHealthCheckTimer];
     [self tryToStartLocalLoop];
 }
 
@@ -416,7 +433,10 @@ shouldWaitForLoadingOfRequestedResource:(AVAssetResourceLoadingRequest *)loading
 - (NSTimeInterval)duration
 {
     if (!self.isAssetLoaded) {
+        return self.fullAudioDataLength;
+        /*
         return 5 * 60.0; // give it a good guess of 5 min before asset loads...
+         */
     }
     return CMTimeGetSeconds(self.player.currentItem.asset.duration);
 }
