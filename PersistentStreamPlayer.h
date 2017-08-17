@@ -43,4 +43,6 @@
  */
 - (void)seekToTime:(NSTimeInterval)time;
 
+- (void)resumeConnection;
+
 @end

@@ -34,6 +34,8 @@
 
 @property (nonatomic, assign) BOOL isDestroyed;
 
+@property (nonatomic, assign) BOOL isResumed;
+
 @end
 
 @implementation PersistentStreamPlayer
@@ -58,10 +60,7 @@
     return self;
 }
 
-- (void)dealloc
-{
-    [self destroy];
-}
+#pragma mark - Actions
 
 - (void)prepareToPlay
 {
@@ -80,21 +79,11 @@
 //    self.player.automaticallyWaitsToMinimizeStalling = NO;
 }
 
-- (void)addObservers
+- (void)play
 {
-    [[NSNotificationCenter defaultCenter] addObserver:self
-                                             selector:@selector(playerItemDidReachEnd:)
-                                                 name:AVPlayerItemDidPlayToEndTimeNotification
-                                               object:[self.player currentItem]];
-    [[NSNotificationCenter defaultCenter] addObserver:self
-                                             selector:@selector(playerItemDidStall:)
-                                                 name:AVPlayerItemPlaybackStalledNotification
-                                               object:[self.player currentItem]];
-}
-
-- (void)removeObservers
-{
-    [[NSNotificationCenter defaultCenter] removeObserver:self];
+    [self.player play];
+    [self startHealthCheckTimer];
+    [self.loopingLocalAudioPlayer play];
 }
 
 - (void)pause
@@ -104,60 +93,7 @@
     [self.loopingLocalAudioPlayer pause];
 }
 
-- (void)destroy
-{
-    if (self.isDestroyed) {
-        return;
-    }
-    self.isDestroyed = YES;
-
-    [self removeObservers];
-
-    [self stopHealthCheckTimer];
-    [self.player pause];
-
-    [self.player.currentItem removeObserver:self forKeyPath:@"status"];
-    [self.player.currentItem cancelPendingSeeks];
-    [self.player.currentItem.asset cancelLoading];
-    self.player.rate = 0.0;
-    self.player = nil;
-
-    [self.connection cancel];
-    self.connection = nil;
-
-    [self.loopingLocalAudioPlayer stop];
-    self.loopingLocalAudioPlayer = nil;
-}
-
-- (NSURL *)audioRemoteStreamingURL
-{
-    if (!self.remoteURL) {
-        return nil;
-    }
-
-    NSURLComponents *components = [[NSURLComponents alloc] initWithURL:self.remoteURL resolvingAgainstBaseURL:NO];
-    self.originalURLScheme = components.scheme;
-    components.scheme = @"streaming";
-    return components.URL;
-}
-
-- (void)play
-{
-    [self.player play];
-    [self startHealthCheckTimer];
-    [self.loopingLocalAudioPlayer play];
-}
-
-- (BOOL)playing
-{
-    if (self.loopingLocalAudioPlayer) {
-        return self.loopingLocalAudioPlayer.playing;
-    }
-    return self.player.rate != 0 && !self.player.error;
-}
-
 /* See "in beta" warning in header file. */
-#pragma mark - seeking
 - (void)seekToTime:(NSTimeInterval)time
 {
     CMTime seekTime = CMTimeMakeWithSeconds(MAX(time, 0), self.player.currentTime.timescale);
@@ -165,11 +101,15 @@
 }
 
 #pragma mark - NSURLConnection delegate
+
 - (void)connection:(NSURLConnection *)connection didReceiveResponse:(NSURLResponse *)response
 {
-    self.loadedAudioDataLength = 0;
-    self.response = (NSHTTPURLResponse *)response;
-    self.fullAudioDataLength = self.response.expectedContentLength;
+    if (!self.isResumed) {
+        self.response = (NSHTTPURLResponse *)response;
+        self.loadedAudioDataLength = 0;
+        self.fullAudioDataLength = self.response.expectedContentLength;
+    }
+    
     [self processPendingRequests];
 }
 
@@ -178,6 +118,68 @@
     self.loadedAudioDataLength += data.length;
     [self appendDataToTempFile:data];
     [self processPendingRequests];
+    
+    if (self.isResumed) {
+        self.isResumed = NO;
+        self.isStalled = NO;
+    }
+}
+
+- (void)connectionDidFinishLoading:(NSURLConnection *)connection
+{
+    self.connectionHasFinishedLoading = YES;
+    
+    [self processPendingRequests];
+    [FileUtils moveFileFromURL:self.tempURL toURL:self.localURL];
+    
+    if ([self.delegate respondsToSelector:@selector(persistentStreamPlayerDidPersistAsset:)]) {
+        [self.delegate persistentStreamPlayerDidPersistAsset:self];
+    }
+}
+
+- (void)connection:(NSURLConnection *)connection didFailWithError:(NSError *)error{
+    
+    NSArray *pendingRequests = [self.pendingRequests copy];
+    for (AVAssetResourceLoadingRequest *loadingRequest in pendingRequests) {
+        NSURLComponents * component = [[NSURLComponents alloc] initWithURL:loadingRequest.request.URL resolvingAgainstBaseURL:NO];
+        component.scheme = self.originalURLScheme ?: @"http";
+        
+        if ([component.URL.absoluteString isEqualToString: connection.currentRequest.URL.absoluteString] ) {
+            [loadingRequest finishLoadingWithError:error];
+            [self.pendingRequests removeObject:loadingRequest];
+        }
+    }
+    
+    if (!self.connectionHasFinishedLoading) {
+        
+        [self.connection cancel];
+        self.connection = nil;
+        
+        if (self.pendingRequests.count == 0) {
+            if ([self.delegate respondsToSelector:@selector(persistentStreamPlayerDidFailToLoadAsset:)]) {
+                [self.delegate persistentStreamPlayerDidFailToLoadAsset:self];
+            }
+        }
+        
+    }
+}
+
+- (void)resumeConnection {
+    NSURL *interceptedURL = self.audioRemoteStreamingURL;
+    NSURLComponents *actualURLComponents = [[NSURLComponents alloc] initWithURL:interceptedURL resolvingAgainstBaseURL:NO];
+    actualURLComponents.scheme = self.originalURLScheme ?: @"http";
+    
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:actualURLComponents.URL];
+    if (self.loadedAudioDataLength > 0) {
+        NSString *range = [NSString stringWithFormat:@"bytes=%i-", self.loadedAudioDataLength];
+        [request setValue:range forHTTPHeaderField:@"Range"];
+    }
+    
+    self.connection = [[NSURLConnection alloc] initWithRequest:request delegate:self startImmediately:NO];
+    [self.connection setDelegateQueue:[NSOperationQueue mainQueue]];
+    [self.connection start];
+    
+    self.isResumed = YES;
 }
 
 - (void)appendDataToTempFile:(NSData *)data
@@ -189,6 +191,16 @@
         [fileHandle seekToEndOfFile];
         [fileHandle writeData:data];
     }
+}
+
+#pragma mark - Getters & Setters
+
+- (BOOL)playing
+{
+    if (self.loopingLocalAudioPlayer) {
+        return self.loopingLocalAudioPlayer.playing;
+    }
+    return self.player.rate != 0 && !self.player.error;
 }
 
 - (BOOL)tempFileExists
@@ -208,16 +220,16 @@
     return self.connectionHasFinishedLoading ? self.localURL : self.tempURL;
 }
 
-- (void)connectionDidFinishLoading:(NSURLConnection *)connection
+- (NSURL *)audioRemoteStreamingURL
 {
-    self.connectionHasFinishedLoading = YES;
-
-    [self processPendingRequests];
-    [FileUtils moveFileFromURL:self.tempURL toURL:self.localURL];
-
-    if ([self.delegate respondsToSelector:@selector(persistentStreamPlayerDidPersistAsset:)]) {
-        [self.delegate persistentStreamPlayerDidPersistAsset:self];
+    if (!self.remoteURL) {
+        return nil;
     }
+    
+    NSURLComponents *components = [[NSURLComponents alloc] initWithURL:self.remoteURL resolvingAgainstBaseURL:NO];
+    self.originalURLScheme = components.scheme;
+    components.scheme = @"streaming";
+    return components.URL;
 }
 
 - (float)volume
@@ -244,7 +256,39 @@
 	self.player.muted = muted;
 }
 
+- (BOOL)isAssetLoaded
+{
+    AVKeyValueStatus durationStatus = [self.player.currentItem.asset statusOfValueForKey:@"duration" error:NULL];
+    return durationStatus == AVKeyValueStatusLoaded && self.player.status == AVPlayerStatusReadyToPlay;
+}
+
+- (NSTimeInterval)duration
+{
+    if (!self.isAssetLoaded) {
+        return self.fullAudioDataLength;
+        /*
+         return 5 * 60.0; // give it a good guess of 5 min before asset loads...
+         */
+    }
+    return CMTimeGetSeconds(self.player.currentItem.asset.duration);
+}
+
+- (NSTimeInterval)timeBuffered
+{
+    CMTimeRange timeRange = [[self.player.currentItem.loadedTimeRanges lastObject] CMTimeRangeValue];
+    return CMTimeGetSeconds(timeRange.start) + CMTimeGetSeconds(timeRange.duration);
+}
+
+- (NSTimeInterval)currentTime
+{
+    if (self.loopingLocalAudioPlayer) {
+        return self.loopingLocalAudioPlayer.currentTime;
+    }
+    return CMTimeGetSeconds(self.player.currentTime);
+}
+
 #pragma mark - AVURLAsset resource loading
+
 - (void)processPendingRequests
 {
     NSMutableArray *requestsCompleted = [NSMutableArray array];
@@ -334,18 +378,56 @@ shouldWaitForLoadingOfRequestedResource:(AVAssetResourceLoadingRequest *)loading
     [self.pendingRequests removeObject:loadingRequest];
 }
 
-#pragma mark - KVO
+#pragma mark - Observing
+
 - (void)observeValueForKeyPath:(NSString *)keyPath
                       ofObject:(id)object
                         change:(NSDictionary *)change
                        context:(void *)context
 {
-    if (self.player.currentItem.status == AVPlayerItemStatusReadyToPlay) {
+    if (self.player.currentItem.status == AVPlayerItemStatusReadyToPlay
+        && self.playing) {
         [self.player play];
     }
 }
 
-#pragma mark - health check timer
+- (void)addObservers
+{
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(playerItemDidReachEnd:)
+                                                 name:AVPlayerItemDidPlayToEndTimeNotification
+                                               object:[self.player currentItem]];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(playerItemDidStall:)
+                                                 name:AVPlayerItemPlaybackStalledNotification
+                                               object:[self.player currentItem]];
+}
+
+- (void)removeObservers
+{
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+#pragma mark - AVPlayerItem
+
+- (void)playerItemDidStall:(NSNotification *)notification
+{
+    self.isStalled = YES;
+    
+    if ([self.delegate respondsToSelector:@selector(persistentStreamPlayerStreamingDidStall:)]) {
+        [self.delegate persistentStreamPlayerStreamingDidStall:self];
+    }
+}
+
+- (void)playerItemDidReachEnd:(NSNotification *)notification
+{
+    if ([self.delegate respondsToSelector:@selector(persistentStreamPlayerDidFinishPlaying:)]) {
+        [self.delegate persistentStreamPlayerDidFinishPlaying:self];
+    }
+    [self stopHealthCheckTimer];
+    [self tryToStartLocalLoop];
+}
+
 - (void)startHealthCheckTimer
 {
     if (self.healthCheckTimer) {
@@ -397,15 +479,6 @@ shouldWaitForLoadingOfRequestedResource:(AVAssetResourceLoadingRequest *)loading
     }
 }
 
-- (void)playerItemDidReachEnd:(NSNotification *)notification
-{
-    if ([self.delegate respondsToSelector:@selector(persistentStreamPlayerDidFinishPlaying:)]) {
-        [self.delegate persistentStreamPlayerDidFinishPlaying:self];
-    }
-    [self stopHealthCheckTimer];
-    [self tryToStartLocalLoop];
-}
-
 - (void)tryToStartLocalLoop
 {
     if (!self.looping) {
@@ -420,32 +493,12 @@ shouldWaitForLoadingOfRequestedResource:(AVAssetResourceLoadingRequest *)loading
     [self.loopingLocalAudioPlayer play];
 }
 
-- (void)playerItemDidStall:(NSNotification *)notification
-{
-    self.isStalled = YES;
-
-    if ([self.delegate respondsToSelector:@selector(persistentStreamPlayerStreamingDidStall:)]) {
-        [self.delegate persistentStreamPlayerStreamingDidStall:self];
-    }
-}
-
-#pragma mark - asset and duration
-- (NSTimeInterval)duration
-{
-    if (!self.isAssetLoaded) {
-        return self.fullAudioDataLength;
-        /*
-        return 5 * 60.0; // give it a good guess of 5 min before asset loads...
-         */
-    }
-    return CMTimeGetSeconds(self.player.currentItem.asset.duration);
-}
-
 - (void)loadAssetIfNecessary
 {
     if (self.hasForcedDurationLoad) {
         return;
     }
+    
     if (self.isAssetLoaded) {
         return;
     }
@@ -463,40 +516,56 @@ shouldWaitForLoadingOfRequestedResource:(AVAssetResourceLoadingRequest *)loading
     }
 }
 
-- (BOOL)isAssetLoaded
-{
-    AVKeyValueStatus durationStatus = [self.player.currentItem.asset statusOfValueForKey:@"duration" error:NULL];
-    return durationStatus == AVKeyValueStatusLoaded && self.player.status == AVPlayerStatusReadyToPlay;
-}
-
 - (void)forceLoadOfDuration
 {
+    __weak typeof(self) weakSelf = self;
     [self.player.currentItem.asset loadValuesAsynchronouslyForKeys:@[@"duration"]
-                                                            completionHandler:^{
-                                                                if (self.isAssetLoaded) {
-                                                                    if ([self.delegate respondsToSelector:@selector(persistentStreamPlayerDidLoadAsset:)]) {
-                                                                        [self.delegate persistentStreamPlayerDidLoadAsset:self];
-                                                                    }
-                                                                } else {
-                                                                    if ([self.delegate respondsToSelector:@selector(persistentStreamPlayerDidFailToLoadAsset:)]) {
-                                                                        [self.delegate persistentStreamPlayerDidFailToLoadAsset:self];
-                                                                    }
-                                                                }
-                                                            }];
+                                                 completionHandler:^{
+                                                     if(weakSelf) {
+                                                         PersistentStreamPlayer* strongSelf = weakSelf;
+                                                         if (strongSelf.isAssetLoaded) {
+                                                             if ([strongSelf.delegate respondsToSelector:@selector(persistentStreamPlayerDidLoadAsset:)]) {
+                                                                 [strongSelf.delegate persistentStreamPlayerDidLoadAsset:strongSelf];
+                                                             }
+                                                         } else {
+                                                             if ([strongSelf.delegate respondsToSelector:@selector(persistentStreamPlayerDidFailToLoadAsset:)]) {
+                                                                 [strongSelf.delegate persistentStreamPlayerDidFailToLoadAsset:strongSelf];
+                                                             }
+                                                         }
+                                                     }
+                                                 }];
 }
 
-- (NSTimeInterval)timeBuffered
+#pragma mark - Memory management
+
+- (void)dealloc
 {
-    CMTimeRange timeRange = [[self.player.currentItem.loadedTimeRanges lastObject] CMTimeRangeValue];
-    return CMTimeGetSeconds(timeRange.start) + CMTimeGetSeconds(timeRange.duration);
+    [self destroy];
 }
 
-- (NSTimeInterval)currentTime
+- (void)destroy
 {
-    if (self.loopingLocalAudioPlayer) {
-        return self.loopingLocalAudioPlayer.currentTime;
+    if (self.isDestroyed) {
+        return;
     }
-    return CMTimeGetSeconds(self.player.currentTime);
+    self.isDestroyed = YES;
+    
+    [self removeObservers];
+    
+    [self stopHealthCheckTimer];
+    [self.player pause];
+    
+    [self.player.currentItem removeObserver:self forKeyPath:@"status"];
+    [self.player.currentItem cancelPendingSeeks];
+    [self.player.currentItem.asset cancelLoading];
+    self.player.rate = 0.0;
+    self.player = nil;
+    
+    [self.connection cancel];
+    self.connection = nil;
+    
+    [self.loopingLocalAudioPlayer stop];
+    self.loopingLocalAudioPlayer = nil;
 }
 
 @end
