@@ -24,6 +24,9 @@
 @property (nonatomic, assign) BOOL looping;
 @property (nonatomic, readonly) BOOL playing;
 @property (nonatomic, assign) float volume;
+@property (nonatomic, assign) BOOL muted;
+
+@property (nonatomic, readonly, nullable) AVPlayer *player;
 
 - (void)play;
 - (void)pause;
@@ -39,5 +42,7 @@
  * If you want to help make this robust, a pull request would be eagerly welcomed
  */
 - (void)seekToTime:(NSTimeInterval)time;
+
+- (void)resumeConnection;
 
 @end
