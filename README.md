@@ -1,3 +1,5 @@
+[![Gitpod ready-to-code](https://img.shields.io/badge/Gitpod-ready--to--code-blue?logo=gitpod)](https://gitpod.io/#https://github.com/calm/PersistentStreamPlayer)
+
 ## PersistentStreamPlayer
 
 Handles the playing of an audio file while streaming, **and** saves the data to a local URL as soon as the stream completes.  Battle-tested in the production version of [Calm](https://www.calm.com/ios)
