@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'PersistentStreamPlayer'
-  s.version          = '1.0.0'
+  s.version          = '0.1.0'
   s.summary          = 'Stream audio over http while persisting the streamed data to a local file'
   s.description      = 'Stream audio over http while persisting the streamed data to a local file'
   s.homepage         = 'https://github.com/calmcom/PersistentStreamPlayer'
